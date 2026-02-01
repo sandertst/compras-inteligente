@@ -1,0 +1,134 @@
+{
+  "identity": {
+    "persona": "E1: The Anti-AI Designer",
+    "mission": "Create a fresh, organic, and highly efficient shopping experience that feels like a modern kitchen tool, not a spreadsheet.",
+    "principles": [
+      "Fusion: Mix 'Organic Market' aesthetics with 'Swiss Precision' layouts.",
+      "Emotion: Every interaction should feel 'crisp' like biting into a fresh apple.",
+      "Content: The food is the hero. Use whitespace to let the items breathe.",
+      "Zoom In: Focus on the essential numbers (stock count, price).",
+      "Negative Space: Use generous padding to prevent clutter."
+    ]
+  },
+  "typography": {
+    "headings": {
+      "family": "Manrope",
+      "weights": ["600", "700", "800"],
+      "usage": "Main titles, section headers, big numbers.",
+      "letterSpacing": "tracking-tight"
+    },
+    "body": {
+      "family": "DM Sans",
+      "weights": ["400", "500"],
+      "usage": "List items, descriptions, inputs.",
+      "letterSpacing": "tracking-normal"
+    },
+    "installation": "Import from Google Fonts: https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&family=Manrope:wght@200..800&display=swap"
+  },
+  "colors": {
+    "palette": {
+      "primary": {
+        "name": "Fresh Sage",
+        "hex": "#4A7C59",
+        "usage": "Primary buttons, active states, stock indicators."
+      },
+      "secondary": {
+        "name": "Harvest Orange",
+        "hex": "#F46036",
+        "usage": "Call to actions (Add to Cart), alerts, highlights."
+      },
+      "background": {
+        "name": "Bone White",
+        "hex": "#F9FAFB",
+        "usage": "Main app background."
+      },
+      "surface": {
+        "name": "Pure White",
+        "hex": "#FFFFFF",
+        "usage": "Cards, modals, inputs."
+      },
+      "text": {
+        "primary": "#1F2937",
+        "secondary": "#6B7280",
+        "muted": "#9CA3AF"
+      },
+      "border": {
+        "default": "#E5E7EB",
+        "active": "#4A7C59"
+      }
+    },
+    "theme": "light",
+    "rules": [
+      "Never use pure black (#000000). Use #1F2937.",
+      "Use the 'Fresh Sage' for positive reinforcement (stock added).",
+      "Use 'Harvest Orange' sparingly for high-priority actions."
+    ]
+  },
+  "layout": {
+    "grid_system": {
+      "dashboard": "Bento Grid (Mode A): Mix of 2x2 (Summary), 1x2 (Lists), and 1x1 (Quick Actions).",
+      "lists": "Vertical stack with generous gap-4 or gap-6.",
+      "mobile": "Single column, comfortable touch targets (min 44px)."
+    },
+    "spacing": {
+      "container_padding": "p-6 md:p-12",
+      "item_gap": "gap-4",
+      "section_gap": "gap-12"
+    },
+    "radius": {
+      "default": "rounded-2xl",
+      "buttons": "rounded-full",
+      "inputs": "rounded-xl"
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "Pill-shaped (rounded-full).",
+      "primary": "bg-[#4A7C59] text-white hover:bg-[#3A6346] shadow-lg hover:shadow-xl transition-all",
+      "secondary": "bg-white border border-[#E5E7EB] text-[#1F2937] hover:bg-[#F3F4F6]"
+    },
+    "cards": {
+      "style": "Flat with subtle border, NO heavy shadows. Use 'border border-gray-100 bg-white'.",
+      "hover": "hover:border-[#4A7C59]/30 transition-colors duration-300"
+    },
+    "inputs": {
+      "style": "bg-[#F9FAFB] border-transparent focus:border-[#4A7C59] focus:bg-white transition-all rounded-xl h-12"
+    },
+    "voice_visualizer": {
+      "description": "A visual representation of voice input.",
+      "style": "Animated bars or a pulsing circle using Framer Motion. Color: #F46036 (Orange) when active."
+    },
+    "calculator": {
+      "style": "Floating panel or integrated bottom bar. Clean, large numbers. Font: Manrope."
+    }
+  },
+  "images": {
+    "hero_bg": {
+      "url": "https://images.pexels.com/photos/9550272/pexels-photo-9550272.jpeg",
+      "alt": "Fresh vegetables flat lay",
+      "usage": "Dashboard header background (with overlay) or Landing page hero."
+    },
+    "pantry_bg": {
+      "url": "https://images.pexels.com/photos/4440173/pexels-photo-4440173.jpeg",
+      "alt": "Organized pantry",
+      "usage": "Stock management section header or empty state background."
+    },
+    "categories": {
+      "fruits": "Use Phosphor Icons (Apple, Carrot, etc.) or similar vector icons.",
+      "pantry": "Use Phosphor Icons (Jar, Bread, etc.)."
+    }
+  },
+  "motion": {
+    "transitions": "transition-all duration-300 ease-out",
+    "hover": "scale-[1.02] active:scale-[0.98]",
+    "list_entrance": "Staggered fade-in for list items."
+  },
+  "universal_guidelines": [
+    "Avoid 'AI Slop': No generic gradients, no default shadows.",
+    "Typography First: Let the font weight and size create hierarchy, not just color.",
+    "Micro-interactions: Buttons should feel tactile. Lists should flow.",
+    "Accessibility: Ensure text contrast is high (Sage Green on White is tricky, check contrast). Use darker green for text if needed.",
+    "Data-TestID: All interactive elements MUST have data-testid attributes."
+  ],
+  "instructions_to_main_agent": "1. Install 'lucide-react' and 'framer-motion'. 2. Set up the Tailwind config with the custom colors. 3. Build the 'VoiceInput' component with a visualizer. 4. Use the 'Bento' layout for the main dashboard. 5. Ensure the 'Calculator' is always accessible in the shopping mode."
+}

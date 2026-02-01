@@ -1,0 +1,70 @@
+{
+  "summary": {
+    "total_tests": 10,
+    "passed_tests": 10,
+    "success_rate": "100.0%",
+    "timestamp": "2026-01-20T17:57:11.878202"
+  },
+  "detailed_results": [
+    {
+      "test": "API Root",
+      "status": "PASS",
+      "details": "Status: 200, Message: Compras Inteligente API",
+      "timestamp": "2026-01-20T17:57:11.521347"
+    },
+    {
+      "test": "Get All Products",
+      "status": "PASS",
+      "details": "Status: 200, Items: 146",
+      "timestamp": "2026-01-20T17:57:11.564916"
+    },
+    {
+      "test": "Get Categories",
+      "status": "PASS",
+      "details": "Status: 200",
+      "timestamp": "2026-01-20T17:57:11.603584"
+    },
+    {
+      "test": "Create Product",
+      "status": "PASS",
+      "details": "Status: 200",
+      "timestamp": "2026-01-20T17:57:11.644109"
+    },
+    {
+      "test": "Get Single Product (ID: 5bf60a09...)",
+      "status": "PASS",
+      "details": "Status: 200",
+      "timestamp": "2026-01-20T17:57:11.682187"
+    },
+    {
+      "test": "Update Stock (ID: 5bf60a09...)",
+      "status": "PASS",
+      "details": "Status: 200",
+      "timestamp": "2026-01-20T17:57:11.723789"
+    },
+    {
+      "test": "Update Product (ID: 5bf60a09...)",
+      "status": "PASS",
+      "details": "Status: 200",
+      "timestamp": "2026-01-20T17:57:11.764446"
+    },
+    {
+      "test": "Get Shopping List",
+      "status": "PASS",
+      "details": "Status: 200, Items: 96",
+      "timestamp": "2026-01-20T17:57:11.800628"
+    },
+    {
+      "test": "Delete Product (ID: 5bf60a09...)",
+      "status": "PASS",
+      "details": "Status: 200, Message: Produto exclu\u00eddo com sucesso",
+      "timestamp": "2026-01-20T17:57:11.836830"
+    },
+    {
+      "test": "Get Shopping List",
+      "status": "PASS",
+      "details": "Status: 200, Items: 96",
+      "timestamp": "2026-01-20T17:57:11.877364"
+    }
+  ]
+}

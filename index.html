@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Compras Inteligente</title>
+  <meta name="description" content="Lista de compras inteligente com estoque mínimo, cálculo total e sincronização entre celulares." />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <span class="badge">Compras Inteligente</span>
+      <h1>Compras Inteligente</h1>
+      <p>
+        Layout ajustado para celular em posição retrato, com edição dos itens,
+        inclusão e exclusão de produtos e sincronização em tempo real entre aparelhos.
+      </p>
+      <div class="sync-status" id="syncStatus">Modo local</div>
+    </header>
+
+    <main class="main-layout">
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Produtos</h2>
+            <p>Edite nome, estoque mínimo, unidade e estoque atual direto no celular.</p>
+          </div>
+          <div class="header-buttons">
+            <button id="btnSalvar" class="btn btn-light">Salvar</button>
+            <button id="btnRestaurar" class="btn btn-danger">Restaurar</button>
+          </div>
+        </div>
+
+        <section class="new-item-box">
+          <h3>Incluir novo produto</h3>
+          <div class="new-item-grid">
+            <input type="text" id="novoNome" placeholder="Nome do produto" />
+            <input type="number" id="novoMinimo" min="0" step="0.01" placeholder="Estoque mínimo" />
+            <input type="text" id="novoUnidade" placeholder="Unidade" />
+            <button id="btnAdicionarProduto" class="btn btn-primary">Adicionar</button>
+          </div>
+        </section>
+
+        <div class="search-row">
+          <input type="text" id="buscaProduto" placeholder="Buscar produto..." />
+          <span id="contadorProdutos" class="counter">0 produtos</span>
+        </div>
+
+        <div id="listaProdutos" class="product-cards"></div>
+
+        <div class="footer-actions">
+          <button id="btnGerarLista" class="btn btn-primary btn-full">Gerar Lista de Compras</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Lista de compras</h2>
+        <p id="listaResumo">Preencha os dados e gere sua lista.</p>
+
+        <div class="progress-shell">
+          <div class="progress-bar" id="barra">0%</div>
+        </div>
+
+        <div id="listaCompras" class="shopping-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Calculadora de compras</h2>
+        <p>Some o valor dos itens no carrinho.</p>
+
+        <div class="calc-stack">
+          <input type="number" step="0.01" min="0" id="valorItem" placeholder="Ex.: 12,90" />
+          <button id="btnAdicionarValor" class="btn btn-primary">Adicionar valor</button>
+        </div>
+
+        <div class="calc-total">
+          <span>Total acumulado</span>
+          <strong>R$ <span id="total">0,00</span></strong>
+        </div>
+
+        <button id="btnZerarTotal" class="btn btn-light btn-full">Zerar total</button>
+      </section>
+    </main>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="firebase-config.js"></script>
+  <script type="module" src="script.js"></script>
+</body>
+</html>

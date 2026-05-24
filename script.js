@@ -77,14 +77,52 @@ function salvarTudoLocal() {
   localStorage.setItem(STORAGE_KEY_TOTAL, String(totalCompra));
   salvarLocal(STORAGE_KEY_CHECKS, checksComprados);
 }
+
+// FUNÇÃO MELHORADA: Pula para o próximo e destaca
+function pularParaProximo(idAtual) {
+    const cards = Array.from(document.querySelectorAll('.product-card'));
+    const indexAtual = cards.findIndex(c => c.getAttribute('data-id') === idAtual);
+    
+    // Remove destaque de todos
+    cards.forEach(c => c.classList.remove('focado'));
+
+    if (indexAtual !== -1 && cards[indexAtual + 1]) {
+        const proximo = cards[indexAtual + 1];
+        proximo.classList.add('focado');
+        proximo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+// FUNÇÃO NOVA: Ajuste via botões + e -
+function ajustarEstoque(id, delta) {
+    const produto = produtos.find(p => p.id === id);
+    if (!produto) return;
+    
+    const novoValor = Math.max(0, (parseFloat(produto.estoqueAtual) || 0) + delta);
+    produto.estoqueAtual = novoValor;
+    
+    // Atualiza o input visual sem renderizar a lista toda (evita trepidação)
+    const input = document.getElementById(`input-estoque-${id}`);
+    if (input) input.value = novoValor;
+
+    salvarTudoLocal();
+    sincronizarRemoto();
+    
+    // Pula para o próximo após um breve delay
+    setTimeout(() => pularParaProximo(id), 300);
+}
+
 function atualizarProduto(id, campo, valor) {
   const produto = produtos.find(p => p.id === id);
   if (!produto) return;
   if (campo === "nome" || campo === "unidade") produto[campo] = valor;
-  else if (campo === "minimo" || campo === "estoqueAtual") produto[campo] = Math.max(0, Number(String(valor).replace(",", ".")) || 0);
+  else if (campo === "minimo" || campo === "estoqueAtual") {
+      produto[campo] = Math.max(0, Number(String(valor).replace(",", ".")) || 0);
+  }
   salvarTudoLocal();
   sincronizarRemoto();
 }
+
 function adicionarProduto() {
   const nome = document.getElementById("novoNome").value.trim();
   const minimo = Math.max(0, parseFloat(String(document.getElementById("novoMinimo").value).replace(",", ".")) || 0);
@@ -98,6 +136,7 @@ function adicionarProduto() {
   document.getElementById("novoMinimo").value = "";
   document.getElementById("novoUnidade").value = "un";
 }
+
 function excluirProduto(id) {
   const produto = produtos.find(p => p.id === id);
   if (!produto) return;
@@ -108,6 +147,7 @@ function excluirProduto(id) {
   renderizarTudo();
   sincronizarRemoto();
 }
+
 function renderizarProdutos(filtro = "") {
   const container = document.getElementById("listaProdutos");
   const termo = filtro.trim().toLowerCase();
@@ -123,6 +163,7 @@ function renderizarProdutos(filtro = "") {
 
     const card = document.createElement("div");
     card.className = "product-card";
+    card.setAttribute('data-id', produto.id); // Importante para o salto automático
     card.innerHTML = `
       <div class="product-grid">
         <div>
@@ -131,7 +172,7 @@ function renderizarProdutos(filtro = "") {
             oninput="window.app.atualizarProduto('${produto.id}', 'nome', this.value)" />
         </div>
         <div>
-          <label class="product-label">Estoque mínimo</label>
+          <label class="product-label">Mínimo</label>
           <input type="number" min="0" step="0.01" value="${produto.minimo ?? 0}"
             oninput="window.app.atualizarProduto('${produto.id}', 'minimo', this.value)" />
         </div>
@@ -141,9 +182,15 @@ function renderizarProdutos(filtro = "") {
             oninput="window.app.atualizarProduto('${produto.id}', 'unidade', this.value)" />
         </div>
         <div>
-          <label class="product-label">Estoque atual</label>
-          <input type="number" min="0" step="0.01" value="${produto.estoqueAtual ?? 0}"
-            oninput="window.app.atualizarProduto('${produto.id}', 'estoqueAtual', this.value)" />
+          <label class="product-label">Tenho em casa</label>
+          <div class="controles-estoque">
+            <button class="btn-qty minus" onclick="window.app.ajustarEstoque('${produto.id}', -1)">-</button>
+            <input type="number" id="input-estoque-${produto.id}" min="0" step="0.01" value="${produto.estoqueAtual ?? 0}"
+                onfocus="this.select()"
+                oninput="window.app.atualizarProduto('${produto.id}', 'estoqueAtual', this.value)"
+                onchange="window.app.pularParaProximo('${produto.id}')" />
+            <button class="btn-qty" onclick="window.app.ajustarEstoque('${produto.id}', 1)">+</button>
+          </div>
         </div>
       </div>
       <div class="product-actions">
@@ -154,11 +201,11 @@ function renderizarProdutos(filtro = "") {
 
   document.getElementById("contadorProdutos").textContent = `${exibidos} produtos`;
 }
+
 function gerarLista() {
   const lista = document.getElementById("listaCompras");
   const resumo = document.getElementById("listaResumo");
   lista.innerHTML = "";
-
   let totalItens = 0;
   let itensComprados = 0;
 
@@ -193,12 +240,14 @@ function gerarLista() {
     ? "Tudo certo. Sua lista zerou bonito."
     : `Você precisa comprar ${totalItens} item(ns). O progresso sincroniza entre os celulares quando o Firebase estiver configurado.`;
 }
+
 function marcarComprado(id, checked) {
   checksComprados[id] = checked;
   salvarTudoLocal();
   gerarLista();
   sincronizarRemoto();
 }
+
 function adicionarValor() {
   const campo = document.getElementById("valorItem");
   const valor = parseFloat(String(campo.value).replace(",", ".")) || 0;
@@ -208,12 +257,14 @@ function adicionarValor() {
   campo.value = "";
   sincronizarRemoto();
 }
+
 function zerarTotal() {
   totalCompra = 0;
   salvarTudoLocal();
   document.getElementById("total").textContent = formatarMoeda(totalCompra);
   sincronizarRemoto();
 }
+
 function restaurarPadrao() {
   if (!confirm("Deseja restaurar a lista padrão e apagar alterações locais?")) return;
   produtos = [...produtosPadrao].map(p => ({...p, estoqueAtual: 0}));
@@ -223,11 +274,13 @@ function restaurarPadrao() {
   renderizarTudo();
   sincronizarRemoto();
 }
+
 function renderizarTudo() {
   document.getElementById("total").textContent = formatarMoeda(totalCompra);
   renderizarProdutos(document.getElementById("buscaProduto").value);
   gerarLista();
 }
+
 function bindEventos() {
   document.getElementById("btnAdicionarProduto").addEventListener("click", adicionarProduto);
   document.getElementById("btnGerarLista").addEventListener("click", async () => { salvarTudoLocal(); gerarLista(); await sincronizarRemoto(); });
@@ -239,7 +292,10 @@ function bindEventos() {
   document.getElementById("buscaProduto").addEventListener("input", (e) => { renderizarProdutos(e.target.value); });
   document.getElementById("novoUnidade").value = "un";
 }
-window.app = { atualizarProduto, excluirProduto, marcarComprado };
+
+// Registro das funções globais para o HTML
+window.app = { atualizarProduto, excluirProduto, marcarComprado, ajustarEstoque, pularParaProximo };
+
 async function iniciar() {
   carregarEstadoInicial();
   bindEventos();

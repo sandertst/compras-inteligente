@@ -1,128 +1,415 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Compras Inteligente</title>
-<meta name="description" content="Lista de compras inteligente com estoque mínimo, preços e sincronização entre celulares." />
-<meta name="theme-color" content="#2f7d4f" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="style.css" />
-</head>
-<body>
-<div class="app">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getDatabase, ref, onValue, set, update, get } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
 
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 12.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.6L21 8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>
-      </span>
-      <span class="brand-name">Compras Inteligente</span>
-    </div>
-    <div class="sync" id="syncStatus"><span class="dot"></span>Local</div>
-  </header>
+const STORAGE_KEY_PRODUTOS = "comprasInteligenteProdutos";
+const STORAGE_KEY_CHECKS = "comprasInteligenteChecks";
+const STORAGE_KEY_PRECOS = "comprasInteligentePrecos";
 
-  <main class="content">
+let produtos = [];
+let checksComprados = {};
+let precos = {};
+let firebaseAtivo = false;
+let db = null;
+let listaRef = null;
+let ignorarRenderRemoto = false;
 
-    <!-- ABA ESTOQUE -->
-    <section class="screen is-active" id="screen-estoque">
-      <div class="screen-pad">
+const revisados = new Set();      // itens conferidos nesta sessão (somem do estoque)
+let mostrarComprados = false;     // mostrar/ocultar comprados na lista
+let abaAtual = "estoque";
 
-        <button class="add-toggle" id="btnToggleNovo" type="button">
-          <span class="add-toggle-ico" aria-hidden="true">+</span> Cadastrar novo produto
+/* ---------- utilidades ---------- */
+function formatarNumero(valor) {
+  return Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+function formatarMoeda(valor) {
+  return Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function parseNumero(valor) {
+  let s = String(valor).trim();
+  if (s.includes(".") && s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.includes(",")) s = s.replace(",", ".");
+  return Math.max(0, Number(s) || 0);
+}
+function numStr(n) { return String(Number(n) || 0).replace(".", ","); }
+function escapeHtml(t) {
+  return String(t ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+function carregarLocal(chave, fallback) {
+  try { const v = JSON.parse(localStorage.getItem(chave)); return v ?? fallback; } catch { return fallback; }
+}
+function salvarLocal(chave, valor) { localStorage.setItem(chave, JSON.stringify(valor)); }
+function getCard(id) { return document.querySelector(`.card[data-id="${id}"]`); }
+function buscaValor() { return document.getElementById("buscaProduto").value; }
+function passoUnidade(u) { return /kg|kilo|litro/i.test(u || "") ? 0.5 : 1; }
+function faltaDe(p) { return Math.max(0, Number(p.minimo || 0) - Math.max(0, Number(p.estoqueAtual || 0))); }
+
+/* ---------- Firebase ---------- */
+function atualizarStatus(texto, online) {
+  const el = document.getElementById("syncStatus");
+  el.lastChild.textContent = texto;
+  el.classList.toggle("online", !!online);
+}
+function snapshotPadrao() {
+  return {
+    produtos: [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 })),
+    checksComprados: {}, precos: {}, atualizadoEm: Date.now()
+  };
+}
+async function iniciarFirebaseSeConfigurado() {
+  const cfg = window.firebaseSettings || {};
+  if (!cfg.enabled || !cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId) {
+    atualizarStatus("Local", false);
+    return;
+  }
+  const app = initializeApp({
+    apiKey: cfg.apiKey, authDomain: cfg.authDomain, databaseURL: cfg.databaseURL, projectId: cfg.projectId, appId: cfg.appId
+  });
+  db = getDatabase(app);
+  listaRef = ref(db, `listas/${cfg.shoppingListId}`);
+  firebaseAtivo = true;
+  atualizarStatus("Sincronizado", true);
+
+  const existente = await get(listaRef);
+  if (!existente.exists()) await set(listaRef, snapshotPadrao());
+
+  onValue(listaRef, (snap) => {
+    const dados = snap.val() || snapshotPadrao();
+    ignorarRenderRemoto = true;
+    produtos = Array.isArray(dados.produtos) ? dados.produtos : snapshotPadrao().produtos;
+    checksComprados = dados.checksComprados || {};
+    precos = dados.precos || {};
+    salvarTudoLocal();
+    renderizarTudo();
+    ignorarRenderRemoto = false;
+  });
+}
+async function sincronizarRemoto() {
+  if (!firebaseAtivo || !listaRef || ignorarRenderRemoto) return;
+  await update(listaRef, { produtos, checksComprados, precos, atualizadoEm: Date.now() });
+}
+
+/* ---------- estado local ---------- */
+function carregarEstadoInicial() {
+  produtos = carregarLocal(STORAGE_KEY_PRODUTOS, [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 })));
+  checksComprados = carregarLocal(STORAGE_KEY_CHECKS, {});
+  precos = carregarLocal(STORAGE_KEY_PRECOS, {});
+}
+function salvarTudoLocal() {
+  salvarLocal(STORAGE_KEY_PRODUTOS, produtos);
+  salvarLocal(STORAGE_KEY_CHECKS, checksComprados);
+  salvarLocal(STORAGE_KEY_PRECOS, precos);
+}
+function salvarESincronizar() { salvarTudoLocal(); sincronizarRemoto(); }
+
+/* ---------- ABA ESTOQUE ---------- */
+function ajustarEstoque(id, delta) {
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  p.estoqueAtual = Math.max(0, Math.round(((Number(p.estoqueAtual) || 0) + delta) * 100) / 100);
+  const inp = document.getElementById(`estoque-${id}`);
+  if (inp) inp.value = numStr(p.estoqueAtual);
+  atualizarTag(id);
+  salvarESincronizar();
+}
+function definirEstoqueDireto(id, valor) {
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  p.estoqueAtual = parseNumero(valor);
+  atualizarTag(id);
+  salvarESincronizar();
+}
+function atualizarTag(id) {
+  const p = produtos.find(x => x.id === id);
+  const tag = document.getElementById(`tag-${id}`);
+  if (!p || !tag) return;
+  const falta = faltaDe(p);
+  if (falta > 0) {
+    tag.className = "tag tag-falta";
+    tag.textContent = `Falta ${formatarNumero(falta)}`;
+  } else {
+    tag.className = "tag tag-ok";
+    tag.textContent = "Ok";
+  }
+}
+function confirmarItem(id) {
+  if (!produtos.find(p => p.id === id)) return;
+  revisados.add(id);
+  const card = getCard(id);
+  if (card) { card.classList.add("hiding"); setTimeout(() => renderizarProdutos(buscaValor()), 220); }
+  else renderizarProdutos(buscaValor());
+}
+function alternarEdicao(id) {
+  const card = getCard(id);
+  if (!card) return;
+  const box = card.querySelector(".edit-box");
+  if (box) box.hidden = !box.hidden;
+}
+function atualizarProduto(id, campo, valor) {
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  if (campo === "nome") {
+    p.nome = valor;
+    const card = getCard(id);
+    if (card) card.querySelector(".prod-name").textContent = valor || "Produto";
+  } else if (campo === "unidade") {
+    p.unidade = valor;
+  } else if (campo === "minimo") {
+    p.minimo = parseNumero(valor);
+    atualizarTag(id);
+  }
+  salvarESincronizar();
+}
+function adicionarProduto() {
+  const nome = document.getElementById("novoNome").value.trim();
+  const minimo = parseNumero(document.getElementById("novoMinimo").value);
+  const unidade = document.getElementById("novoUnidade").value.trim() || "un";
+  if (!nome) { alert("Digite o nome do produto."); return; }
+  produtos.unshift({ id: `prod_${Date.now()}_${Math.floor(Math.random() * 1000)}`, nome, minimo, unidade, estoqueAtual: 0 });
+  document.getElementById("novoNome").value = "";
+  document.getElementById("novoMinimo").value = "";
+  document.getElementById("novoUnidade").value = "un";
+  document.getElementById("boxNovo").hidden = true;
+  salvarESincronizar();
+  renderizarProdutos(buscaValor());
+  atualizarBadge();
+}
+function excluirProduto(id, el) {
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Excluir o produto "${p.nome}"?`)) { if (el) el.checked = false; return; }
+  produtos = produtos.filter(x => x.id !== id);
+  delete checksComprados[id];
+  delete precos[id];
+  revisados.delete(id);
+  salvarESincronizar();
+  renderizarProdutos(buscaValor());
+  atualizarBadge();
+}
+
+function renderizarProdutos(filtro = "") {
+  const cont = document.getElementById("listaProdutos");
+  const vazio = document.getElementById("estoqueVazio");
+  const termo = filtro.trim().toLowerCase();
+  cont.innerHTML = "";
+  let visiveis = 0;
+
+  produtos.forEach((p, i) => {
+    if (!p.id) p.id = `prod_${Date.now()}_${i}`;
+    if (p.estoqueAtual == null) p.estoqueAtual = 0;
+    if (revisados.has(p.id)) return;
+    if (termo && !String(p.nome || "").toLowerCase().includes(termo)) return;
+    visiveis++;
+
+    const falta = faltaDe(p);
+    const passo = passoUnidade(p.unidade);
+    const card = document.createElement("div");
+    card.className = "card prod";
+    card.setAttribute("data-id", p.id);
+    card.innerHTML = `
+      <div class="prod-head">
+        <div>
+          <span class="prod-name">${escapeHtml(p.nome)}</span>
+          <span class="tag ${falta > 0 ? "tag-falta" : "tag-ok"}" id="tag-${p.id}">${falta > 0 ? "Falta " + formatarNumero(falta) : "Ok"}</span>
+          <div class="prod-sub">Mínimo: ${formatarNumero(p.minimo)} ${escapeHtml(p.unidade || "un")}</div>
+        </div>
+        <button class="icon-btn" type="button" aria-label="Editar" onclick="window.app.alternarEdicao('${p.id}')">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         </button>
-
-        <div class="new-box" id="boxNovo" hidden>
-          <input type="text" id="novoNome" placeholder="Nome do produto" autocomplete="off" />
-          <div class="new-row">
-            <input type="number" id="novoMinimo" min="0" step="0.01" inputmode="decimal" placeholder="Estoque mínimo" />
-            <input type="text" id="novoUnidade" placeholder="Unidade" value="un" />
-          </div>
-          <button class="btn btn-primary btn-full" id="btnAdicionarProduto" type="button">Adicionar à lista</button>
-        </div>
-
-        <div class="search">
-          <span class="search-ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          </span>
-          <input type="text" id="buscaProduto" placeholder="Buscar produto..." autocomplete="off" />
-        </div>
-
-        <div class="review-info">
-          <span id="reviewCount">Confira seu estoque</span>
-          <button class="link-btn" id="btnMostrarTodos" type="button" hidden>Mostrar todos</button>
-        </div>
-
-        <div id="listaProdutos" class="list"></div>
-
-        <div class="empty-state" id="estoqueVazio" hidden>
-          <div class="empty-ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          </div>
-          <p>Estoque conferido!</p>
-          <button class="btn btn-primary" id="btnIrParaLista" type="button">Ver lista de compras</button>
-        </div>
-
-        <button class="link-btn link-danger restore" id="btnRestaurar" type="button">Restaurar lista padrão</button>
       </div>
-    </section>
-
-    <!-- ABA LISTA -->
-    <section class="screen" id="screen-lista">
-      <div class="screen-pad">
-
-        <div class="progress-card">
-          <div class="progress-top">
-            <span id="listaResumo">Falta comprar</span>
-            <strong id="listaPct">0%</strong>
-          </div>
-          <div class="progress-track"><div class="progress-bar" id="barra"></div></div>
-        </div>
-
-        <div id="listaCompras" class="list"></div>
-
-        <button class="link-btn" id="btnVerComprados" type="button" hidden></button>
-
-        <div class="empty-state" id="listaVazia" hidden>
-          <div class="empty-ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          </div>
-          <p>Tudo certo. Sua lista zerou bonito.</p>
-        </div>
+      <div class="stepper">
+        <button class="step" type="button" aria-label="Diminuir" onclick="window.app.ajustarEstoque('${p.id}', -${passo})">−</button>
+        <input class="step-val" type="text" inputmode="decimal" id="estoque-${p.id}" value="${numStr(p.estoqueAtual)}"
+          onfocus="this.select()" oninput="window.app.definirEstoqueDireto('${p.id}', this.value)" />
+        <button class="step" type="button" aria-label="Aumentar" onclick="window.app.ajustarEstoque('${p.id}', ${passo})">+</button>
+        <button class="ok-btn" type="button" onclick="window.app.confirmarItem('${p.id}')">OK</button>
       </div>
-
-      <div class="lista-footer">
-        <div class="total-mini">
-          <span>Total</span>
-          <strong>R$ <span id="precoTotal">0,00</span></strong>
+      <div class="edit-box" hidden>
+        <label>Nome do produto
+          <input type="text" value="${escapeHtml(p.nome)}" oninput="window.app.atualizarProduto('${p.id}','nome',this.value)" />
+        </label>
+        <div class="edit-row">
+          <label>Estoque mínimo
+            <input type="number" min="0" step="0.01" inputmode="decimal" value="${p.minimo ?? 0}" oninput="window.app.atualizarProduto('${p.id}','minimo',this.value)" />
+          </label>
+          <label>Unidade
+            <input type="text" value="${escapeHtml(p.unidade || "un")}" oninput="window.app.atualizarProduto('${p.id}','unidade',this.value)" />
+          </label>
         </div>
-        <button class="btn btn-whats" id="btnWhats" type="button">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-.3-.1-1.2-.5-2.3-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.2-.4.1-.2 0-.3 0-.5-.1-.1-.6-1.5-.9-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-.3.3-1 .9-1 2.3s1 2.7 1.2 2.9c.1.2 2 3.1 4.9 4.3.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.5-.1 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3M12 21.5c-1.7 0-3.3-.5-4.7-1.3l-3.3.9.9-3.2A9.4 9.4 0 0 1 12 3.5c5.2 0 9.5 4.3 9.5 9.5s-4.3 9.5-9.5 9.5"/></svg>
-          Enviar no WhatsApp
-        </button>
+        <label class="del-check">
+          <input type="checkbox" onchange="window.app.excluirProduto('${p.id}', this)" />
+          <span>Excluir este produto</span>
+        </label>
+      </div>`;
+    cont.appendChild(card);
+  });
+
+  const revisadosN = produtos.filter(p => revisados.has(p.id)).length;
+  const infoEl = document.getElementById("reviewCount");
+  const btnTodos = document.getElementById("btnMostrarTodos");
+  btnTodos.hidden = revisadosN === 0;
+
+  if (termo) {
+    infoEl.textContent = visiveis === 0 ? "Nenhum produto encontrado" : `${visiveis} encontrado(s)`;
+  } else if (revisadosN > 0) {
+    const restam = produtos.length - revisadosN;
+    infoEl.textContent = restam > 0 ? `Faltam conferir: ${restam}` : "";
+  } else {
+    infoEl.textContent = `Confira seu estoque · ${produtos.length} itens`;
+  }
+
+  vazio.hidden = !(!termo && visiveis === 0 && produtos.length > 0);
+  atualizarBadge();
+}
+
+/* ---------- ABA LISTA ---------- */
+function gerarLista() {
+  const cont = document.getElementById("listaCompras");
+  const vazia = document.getElementById("listaVazia");
+  const btnVer = document.getElementById("btnVerComprados");
+  cont.innerHTML = "";
+
+  const faltantes = produtos.filter(p => faltaDe(p) > 0);
+  const total = faltantes.length;
+  const comprados = faltantes.filter(p => checksComprados[p.id]).length;
+
+  faltantes.forEach((p) => {
+    const comprado = !!checksComprados[p.id];
+    if (comprado && !mostrarComprados) return;
+    const falta = faltaDe(p);
+    const valPreco = precos[p.id] ? formatarMoeda(precos[p.id]) : "";
+    const item = document.createElement("div");
+    item.className = "card shop" + (comprado ? " comprado" : "");
+    item.setAttribute("data-id", p.id);
+    item.innerHTML = `
+      <label class="shop-check">
+        <input type="checkbox" ${comprado ? "checked" : ""} onchange="window.app.marcarComprado('${p.id}', this.checked)" />
+        <span class="checkmark"></span>
+      </label>
+      <div class="shop-info">
+        <div class="shop-name">${escapeHtml(p.nome)}</div>
+        <div class="shop-qty">Comprar ${formatarNumero(falta)} ${escapeHtml(p.unidade || "un")}</div>
       </div>
-    </section>
+      <div class="shop-price">
+        <span>R$</span>
+        <input type="text" inputmode="decimal" placeholder="000,00" value="${valPreco}"
+          onfocus="this.select()" oninput="window.app.definirPreco('${p.id}', this.value)" />
+      </div>`;
+    cont.appendChild(item);
+  });
 
-  </main>
+  const pct = total === 0 ? 0 : Math.round((comprados / total) * 100);
+  const barra = document.getElementById("barra");
+  barra.style.width = pct + "%";
+  document.getElementById("listaPct").textContent = pct + "%";
+  document.getElementById("listaResumo").textContent = total === 0 ? "Lista vazia" : `${comprados} de ${total} no carrinho`;
 
-  <nav class="tabbar">
-    <button class="tab is-active" id="tabEstoque" type="button">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8l9 5 9-5Z"/><path d="m3 8 0 8 9 5 9-5 0-8"/><path d="m12 13 0 8"/></svg>
-      <span>Estoque</span>
-    </button>
-    <button class="tab" id="tabLista" type="button">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m4 6 .8.8L6.5 5M4 12l.8.8L6.5 11M4 18l.8.8L6.5 17"/></svg>
-      <span>Lista</span>
-      <em class="tab-badge" id="badgeLista" hidden>0</em>
-    </button>
-  </nav>
+  vazia.hidden = total !== 0;
 
-</div>
+  const naoComprados = total - comprados;
+  if (comprados > 0) {
+    btnVer.hidden = false;
+    btnVer.textContent = mostrarComprados ? "Ocultar comprados" : `Ver ${comprados} já no carrinho`;
+  } else {
+    btnVer.hidden = true;
+  }
 
-<script src="data.js"></script>
-<script src="firebase-config.js"></script>
-<script type="module" src="script.js"></script>
-</body>
-</html>
+  atualizarTotalPreco();
+  atualizarBadge();
+}
+function marcarComprado(id, checked) {
+  checksComprados[id] = checked;
+  salvarESincronizar();
+  if (checked && !mostrarComprados) {
+    const card = getCard(id);
+    if (card) {
+      card.classList.add("hiding");
+      setTimeout(() => gerarLista(), 220);
+      atualizarTotalPreco();
+      return;
+    }
+  }
+  gerarLista();
+}
+function definirPreco(id, valor) {
+  const v = parseNumero(valor);
+  if (v > 0) precos[id] = v; else delete precos[id];
+  atualizarTotalPreco();
+  salvarESincronizar();
+}
+function atualizarTotalPreco() {
+  let soma = 0;
+  produtos.forEach(p => { if (faltaDe(p) > 0 && precos[p.id]) soma += Number(precos[p.id]); });
+  document.getElementById("precoTotal").textContent = formatarMoeda(soma);
+}
+function atualizarBadge() {
+  const faltam = produtos.filter(p => faltaDe(p) > 0 && !checksComprados[p.id]).length;
+  const badge = document.getElementById("badgeLista");
+  badge.textContent = faltam;
+  badge.hidden = faltam === 0;
+}
+function enviarWhatsApp() {
+  const faltantes = produtos.filter(p => faltaDe(p) > 0 && !checksComprados[p.id]);
+  if (faltantes.length === 0) { alert("Não há itens pendentes para enviar."); return; }
+  let linhas = faltantes.map(p => {
+    const base = `- ${p.nome}: ${formatarNumero(faltaDe(p))} ${p.unidade || "un"}`;
+    return precos[p.id] ? `${base} (R$ ${formatarMoeda(precos[p.id])})` : base;
+  });
+  let total = 0;
+  produtos.forEach(p => { if (faltaDe(p) > 0 && precos[p.id]) total += Number(precos[p.id]); });
+  let texto = "Lista de compras:\n" + linhas.join("\n");
+  if (total > 0) texto += `\n\nTotal estimado: R$ ${formatarMoeda(total)}`;
+  window.open("https://wa.me/?text=" + encodeURIComponent(texto), "_blank");
+}
+
+/* ---------- restaurar / abas ---------- */
+function restaurarPadrao() {
+  if (!confirm("Restaurar a lista padrão e apagar as alterações?")) return;
+  produtos = [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 }));
+  checksComprados = {};
+  precos = {};
+  revisados.clear();
+  salvarESincronizar();
+  renderizarTudo();
+}
+function trocarAba(nome) {
+  abaAtual = nome;
+  document.getElementById("screen-estoque").classList.toggle("is-active", nome === "estoque");
+  document.getElementById("screen-lista").classList.toggle("is-active", nome === "lista");
+  document.getElementById("tabEstoque").classList.toggle("is-active", nome === "estoque");
+  document.getElementById("tabLista").classList.toggle("is-active", nome === "lista");
+  window.scrollTo(0, 0);
+  if (nome === "lista") gerarLista(); else renderizarProdutos(buscaValor());
+}
+function renderizarTudo() {
+  renderizarProdutos(buscaValor());
+  gerarLista();
+}
+
+/* ---------- eventos ---------- */
+function bindEventos() {
+  document.getElementById("btnToggleNovo").addEventListener("click", () => {
+    const box = document.getElementById("boxNovo");
+    box.hidden = !box.hidden;
+    if (!box.hidden) document.getElementById("novoNome").focus();
+  });
+  document.getElementById("btnAdicionarProduto").addEventListener("click", adicionarProduto);
+  document.getElementById("novoNome").addEventListener("keydown", (e) => { if (e.key === "Enter") adicionarProduto(); });
+  document.getElementById("buscaProduto").addEventListener("input", (e) => renderizarProdutos(e.target.value));
+  document.getElementById("btnMostrarTodos").addEventListener("click", () => { revisados.clear(); renderizarProdutos(buscaValor()); });
+  document.getElementById("btnRestaurar").addEventListener("click", restaurarPadrao);
+  document.getElementById("btnIrParaLista").addEventListener("click", () => trocarAba("lista"));
+  document.getElementById("btnVerComprados").addEventListener("click", () => { mostrarComprados = !mostrarComprados; gerarLista(); });
+  document.getElementById("btnWhats").addEventListener("click", enviarWhatsApp);
+  document.getElementById("tabEstoque").addEventListener("click", () => trocarAba("estoque"));
+  document.getElementById("tabLista").addEventListener("click", () => trocarAba("lista"));
+}
+
+window.app = { ajustarEstoque, definirEstoqueDireto, confirmarItem, alternarEdicao, atualizarProduto, excluirProduto, marcarComprado, definirPreco };
+
+async function iniciar() {
+  carregarEstadoInicial();
+  bindEventos();
+  renderizarTudo();
+  await iniciarFirebaseSeConfigurado();
+}
+iniciar();

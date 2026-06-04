@@ -2,39 +2,63 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebas
 import { getDatabase, ref, onValue, set, update, get } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
 
 const STORAGE_KEY_PRODUTOS = "comprasInteligenteProdutos";
-const STORAGE_KEY_TOTAL = "comprasInteligenteTotal";
 const STORAGE_KEY_CHECKS = "comprasInteligenteChecks";
+const STORAGE_KEY_PRECOS = "comprasInteligentePrecos";
 
 let produtos = [];
-let totalCompra = 0;
 let checksComprados = {};
+let precos = {};
 let firebaseAtivo = false;
 let db = null;
 let listaRef = null;
 let ignorarRenderRemoto = false;
 
+const revisados = new Set();      // itens conferidos nesta sessão (somem do estoque)
+let mostrarComprados = false;     // mostrar/ocultar comprados na lista
+let abaAtual = "estoque";
+
+/* ---------- utilidades ---------- */
 function formatarNumero(valor) {
   return Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 function formatarMoeda(valor) {
   return Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-function escapeHtml(texto) {
-  return String(texto ?? "").replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+function parseNumero(valor) {
+  let s = String(valor).trim();
+  if (s.includes(".") && s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (s.includes(",")) s = s.replace(",", ".");
+  return Math.max(0, Number(s) || 0);
+}
+function numStr(n) { return String(Number(n) || 0).replace(".", ","); }
+function escapeHtml(t) {
+  return String(t ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 function carregarLocal(chave, fallback) {
-  try { const valor = JSON.parse(localStorage.getItem(chave)); return valor ?? fallback; } catch { return fallback; }
+  try { const v = JSON.parse(localStorage.getItem(chave)); return v ?? fallback; } catch { return fallback; }
 }
 function salvarLocal(chave, valor) { localStorage.setItem(chave, JSON.stringify(valor)); }
-function atualizarStatus(texto) { document.getElementById("syncStatus").textContent = texto; }
-function snapshotPadrao() {
-  return { produtos: [...produtosPadrao].map(p => ({...p, estoqueAtual: 0})), totalCompra: 0, checksComprados: {}, atualizadoEm: Date.now() };
-}
+function getCard(id) { return document.querySelector(`.card[data-id="${id}"]`); }
+function buscaValor() { return document.getElementById("buscaProduto").value; }
+function passoUnidade(u) { return /kg|kilo|litro/i.test(u || "") ? 0.5 : 1; }
+function faltaDe(p) { return Math.max(0, Number(p.minimo || 0) - Math.max(0, Number(p.estoqueAtual || 0))); }
 
+/* ---------- Firebase ---------- */
+function atualizarStatus(texto, online) {
+  const el = document.getElementById("syncStatus");
+  el.lastChild.textContent = texto;
+  el.classList.toggle("online", !!online);
+}
+function snapshotPadrao() {
+  return {
+    produtos: [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 })),
+    checksComprados: {}, precos: {}, atualizadoEm: Date.now()
+  };
+}
 async function iniciarFirebaseSeConfigurado() {
   const cfg = window.firebaseSettings || {};
   if (!cfg.enabled || !cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId) {
-    atualizarStatus("Modo local");
+    atualizarStatus("Local", false);
     return;
   }
   const app = initializeApp({
@@ -43,258 +67,342 @@ async function iniciarFirebaseSeConfigurado() {
   db = getDatabase(app);
   listaRef = ref(db, `listas/${cfg.shoppingListId}`);
   firebaseAtivo = true;
-  atualizarStatus("Sincronização ativa");
+  atualizarStatus("Sincronizado", true);
 
   const existente = await get(listaRef);
   if (!existente.exists()) await set(listaRef, snapshotPadrao());
 
-  onValue(listaRef, (snapshot) => {
-    const dados = snapshot.val() || snapshotPadrao();
+  onValue(listaRef, (snap) => {
+    const dados = snap.val() || snapshotPadrao();
     ignorarRenderRemoto = true;
     produtos = Array.isArray(dados.produtos) ? dados.produtos : snapshotPadrao().produtos;
-    totalCompra = Number(dados.totalCompra || 0);
     checksComprados = dados.checksComprados || {};
-    salvarLocal(STORAGE_KEY_PRODUTOS, produtos);
-    salvarLocal(STORAGE_KEY_TOTAL, totalCompra);
-    salvarLocal(STORAGE_KEY_CHECKS, checksComprados);
+    precos = dados.precos || {};
+    salvarTudoLocal();
     renderizarTudo();
     ignorarRenderRemoto = false;
   });
 }
-
 async function sincronizarRemoto() {
   if (!firebaseAtivo || !listaRef || ignorarRenderRemoto) return;
-  await update(listaRef, { produtos, totalCompra, checksComprados, atualizadoEm: Date.now() });
+  await update(listaRef, { produtos, checksComprados, precos, atualizadoEm: Date.now() });
 }
 
+/* ---------- estado local ---------- */
 function carregarEstadoInicial() {
-  produtos = carregarLocal(STORAGE_KEY_PRODUTOS, [...produtosPadrao].map(p => ({...p, estoqueAtual: 0})));
-  totalCompra = Number(localStorage.getItem(STORAGE_KEY_TOTAL) || "0") || 0;
+  produtos = carregarLocal(STORAGE_KEY_PRODUTOS, [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 })));
   checksComprados = carregarLocal(STORAGE_KEY_CHECKS, {});
+  precos = carregarLocal(STORAGE_KEY_PRECOS, {});
 }
 function salvarTudoLocal() {
   salvarLocal(STORAGE_KEY_PRODUTOS, produtos);
-  localStorage.setItem(STORAGE_KEY_TOTAL, String(totalCompra));
   salvarLocal(STORAGE_KEY_CHECKS, checksComprados);
+  salvarLocal(STORAGE_KEY_PRECOS, precos);
 }
+function salvarESincronizar() { salvarTudoLocal(); sincronizarRemoto(); }
 
-// FUNÇÃO MELHORADA: Pula para o próximo e destaca
-function pularParaProximo(idAtual) {
-    const cards = Array.from(document.querySelectorAll('.product-card'));
-    const indexAtual = cards.findIndex(c => c.getAttribute('data-id') === idAtual);
-    
-    // Remove destaque de todos
-    cards.forEach(c => c.classList.remove('focado'));
-
-    if (indexAtual !== -1 && cards[indexAtual + 1]) {
-        const proximo = cards[indexAtual + 1];
-        proximo.classList.add('focado');
-        proximo.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-}
-
-// FUNÇÃO NOVA: Ajuste via botões + e -
+/* ---------- ABA ESTOQUE ---------- */
 function ajustarEstoque(id, delta) {
-    const produto = produtos.find(p => p.id === id);
-    if (!produto) return;
-    
-    const novoValor = Math.max(0, (parseFloat(produto.estoqueAtual) || 0) + delta);
-    produto.estoqueAtual = novoValor;
-    
-    // Atualiza o input visual sem renderizar a lista toda (evita trepidação)
-    const input = document.getElementById(`input-estoque-${id}`);
-    if (input) input.value = novoValor;
-
-    salvarTudoLocal();
-    sincronizarRemoto();
-    
-    // Pula para o próximo após um breve delay
-    setTimeout(() => pularParaProximo(id), 300);
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  p.estoqueAtual = Math.max(0, Math.round(((Number(p.estoqueAtual) || 0) + delta) * 100) / 100);
+  const inp = document.getElementById(`estoque-${id}`);
+  if (inp) inp.value = numStr(p.estoqueAtual);
+  atualizarTag(id);
+  salvarESincronizar();
 }
-
-function atualizarProduto(id, campo, valor) {
-  const produto = produtos.find(p => p.id === id);
-  if (!produto) return;
-  if (campo === "nome" || campo === "unidade") produto[campo] = valor;
-  else if (campo === "minimo" || campo === "estoqueAtual") {
-      produto[campo] = Math.max(0, Number(String(valor).replace(",", ".")) || 0);
+function definirEstoqueDireto(id, valor) {
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  p.estoqueAtual = parseNumero(valor);
+  atualizarTag(id);
+  salvarESincronizar();
+}
+function atualizarTag(id) {
+  const p = produtos.find(x => x.id === id);
+  const tag = document.getElementById(`tag-${id}`);
+  if (!p || !tag) return;
+  const falta = faltaDe(p);
+  if (falta > 0) {
+    tag.className = "tag tag-falta";
+    tag.textContent = `Falta ${formatarNumero(falta)}`;
+  } else {
+    tag.className = "tag tag-ok";
+    tag.textContent = "Ok";
   }
-  salvarTudoLocal();
-  sincronizarRemoto();
 }
-
+function confirmarItem(id) {
+  if (!produtos.find(p => p.id === id)) return;
+  revisados.add(id);
+  const card = getCard(id);
+  if (card) { card.classList.add("hiding"); setTimeout(() => renderizarProdutos(buscaValor()), 220); }
+  else renderizarProdutos(buscaValor());
+}
+function alternarEdicao(id) {
+  const card = getCard(id);
+  if (!card) return;
+  const box = card.querySelector(".edit-box");
+  if (box) box.hidden = !box.hidden;
+}
+function atualizarProduto(id, campo, valor) {
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  if (campo === "nome") {
+    p.nome = valor;
+    const card = getCard(id);
+    if (card) card.querySelector(".prod-name").textContent = valor || "Produto";
+  } else if (campo === "unidade") {
+    p.unidade = valor;
+  } else if (campo === "minimo") {
+    p.minimo = parseNumero(valor);
+    atualizarTag(id);
+  }
+  salvarESincronizar();
+}
 function adicionarProduto() {
   const nome = document.getElementById("novoNome").value.trim();
-  const minimo = Math.max(0, parseFloat(String(document.getElementById("novoMinimo").value).replace(",", ".")) || 0);
+  const minimo = parseNumero(document.getElementById("novoMinimo").value);
   const unidade = document.getElementById("novoUnidade").value.trim() || "un";
   if (!nome) { alert("Digite o nome do produto."); return; }
-  produtos.unshift({ id: `prod_${Date.now()}_${Math.floor(Math.random()*1000)}`, nome, minimo, unidade, estoqueAtual: 0 });
-  salvarTudoLocal();
-  renderizarProdutos(document.getElementById("buscaProduto").value);
-  sincronizarRemoto();
+  produtos.unshift({ id: `prod_${Date.now()}_${Math.floor(Math.random() * 1000)}`, nome, minimo, unidade, estoqueAtual: 0 });
   document.getElementById("novoNome").value = "";
   document.getElementById("novoMinimo").value = "";
   document.getElementById("novoUnidade").value = "un";
+  document.getElementById("boxNovo").hidden = true;
+  salvarESincronizar();
+  renderizarProdutos(buscaValor());
+  atualizarBadge();
 }
-
 function excluirProduto(id) {
-  const produto = produtos.find(p => p.id === id);
-  if (!produto) return;
-  if (!confirm(`Excluir o produto "${produto.nome}"?`)) return;
-  produtos = produtos.filter(p => p.id !== id);
+  const p = produtos.find(x => x.id === id);
+  if (!p) return;
+  if (!confirm(`Excluir o produto "${p.nome}"?`)) return;
+  produtos = produtos.filter(x => x.id !== id);
   delete checksComprados[id];
-  salvarTudoLocal();
-  renderizarTudo();
-  sincronizarRemoto();
+  delete precos[id];
+  revisados.delete(id);
+  salvarESincronizar();
+  renderizarProdutos(buscaValor());
+  atualizarBadge();
 }
 
 function renderizarProdutos(filtro = "") {
-  const container = document.getElementById("listaProdutos");
+  const cont = document.getElementById("listaProdutos");
+  const vazio = document.getElementById("estoqueVazio");
   const termo = filtro.trim().toLowerCase();
-  container.innerHTML = "";
-  let exibidos = 0;
+  cont.innerHTML = "";
+  let visiveis = 0;
 
-  produtos.forEach((produto, index) => {
-    if (!produto.id) produto.id = `prod_${Date.now()}_${index}`;
-    if (produto.estoqueAtual === undefined || produto.estoqueAtual === null) produto.estoqueAtual = 0;
-    const nome = String(produto.nome || "").toLowerCase();
-    if (termo && !nome.includes(termo)) return;
-    exibidos++;
+  produtos.forEach((p, i) => {
+    if (!p.id) p.id = `prod_${Date.now()}_${i}`;
+    if (p.estoqueAtual == null) p.estoqueAtual = 0;
+    if (revisados.has(p.id)) return;
+    if (termo && !String(p.nome || "").toLowerCase().includes(termo)) return;
+    visiveis++;
 
+    const falta = faltaDe(p);
+    const passo = passoUnidade(p.unidade);
     const card = document.createElement("div");
-    card.className = "product-card";
-    card.setAttribute('data-id', produto.id); // Importante para o salto automático
+    card.className = "card prod";
+    card.setAttribute("data-id", p.id);
     card.innerHTML = `
-      <div class="product-grid">
+      <div class="prod-head">
         <div>
-          <label class="product-label">Produto / observação</label>
-          <input type="text" value="${escapeHtml(produto.nome)}" placeholder="Nome do produto"
-            oninput="window.app.atualizarProduto('${produto.id}', 'nome', this.value)" />
+          <span class="prod-name">${escapeHtml(p.nome)}</span>
+          <span class="tag ${falta > 0 ? "tag-falta" : "tag-ok"}" id="tag-${p.id}">${falta > 0 ? "Falta " + formatarNumero(falta) : "Ok"}</span>
+          <div class="prod-sub">Mínimo: ${formatarNumero(p.minimo)} ${escapeHtml(p.unidade || "un")}</div>
         </div>
-        <div>
-          <label class="product-label">Mínimo</label>
-          <input type="number" min="0" step="0.01" value="${produto.minimo ?? 0}"
-            oninput="window.app.atualizarProduto('${produto.id}', 'minimo', this.value)" />
-        </div>
-        <div>
-          <label class="product-label">Unidade</label>
-          <input type="text" value="${escapeHtml(produto.unidade || "un")}"
-            oninput="window.app.atualizarProduto('${produto.id}', 'unidade', this.value)" />
-        </div>
-        <div>
-          <label class="product-label">Tenho em casa</label>
-          <div class="controles-estoque">
-            <button class="btn-qty minus" onclick="window.app.ajustarEstoque('${produto.id}', -1)">-</button>
-            <input type="number" id="input-estoque-${produto.id}" min="0" step="0.01" value="${produto.estoqueAtual ?? 0}"
-                onfocus="this.select()"
-                oninput="window.app.atualizarProduto('${produto.id}', 'estoqueAtual', this.value)"
-                onchange="window.app.pularParaProximo('${produto.id}')" />
-            <button class="btn-qty" onclick="window.app.ajustarEstoque('${produto.id}', 1)">+</button>
-          </div>
-        </div>
+        <button class="icon-btn" type="button" aria-label="Editar" onclick="window.app.alternarEdicao('${p.id}')">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
       </div>
-      <div class="product-actions">
-        <button class="btn btn-delete btn-full" onclick="window.app.excluirProduto('${produto.id}')">Excluir produto</button>
+      <div class="stepper">
+        <button class="step" type="button" aria-label="Diminuir" onclick="window.app.ajustarEstoque('${p.id}', -${passo})">−</button>
+        <input class="step-val" type="text" inputmode="decimal" id="estoque-${p.id}" value="${numStr(p.estoqueAtual)}"
+          onfocus="this.select()" oninput="window.app.definirEstoqueDireto('${p.id}', this.value)" />
+        <span class="step-unit">${escapeHtml(p.unidade || "un")}</span>
+        <button class="step" type="button" aria-label="Aumentar" onclick="window.app.ajustarEstoque('${p.id}', ${passo})">+</button>
+        <button class="ok-btn" type="button" onclick="window.app.confirmarItem('${p.id}')">OK</button>
+      </div>
+      <div class="edit-box" hidden>
+        <label>Nome do produto
+          <input type="text" value="${escapeHtml(p.nome)}" oninput="window.app.atualizarProduto('${p.id}','nome',this.value)" />
+        </label>
+        <div class="edit-row">
+          <label>Estoque mínimo
+            <input type="number" min="0" step="0.01" inputmode="decimal" value="${p.minimo ?? 0}" oninput="window.app.atualizarProduto('${p.id}','minimo',this.value)" />
+          </label>
+          <label>Unidade
+            <input type="text" value="${escapeHtml(p.unidade || "un")}" oninput="window.app.atualizarProduto('${p.id}','unidade',this.value)" />
+          </label>
+        </div>
+        <button class="btn btn-delete" type="button" onclick="window.app.excluirProduto('${p.id}')">Excluir produto</button>
       </div>`;
-    container.appendChild(card);
+    cont.appendChild(card);
   });
 
-  document.getElementById("contadorProdutos").textContent = `${exibidos} produtos`;
+  const revisadosN = produtos.filter(p => revisados.has(p.id)).length;
+  const infoEl = document.getElementById("reviewCount");
+  const btnTodos = document.getElementById("btnMostrarTodos");
+  btnTodos.hidden = revisadosN === 0;
+
+  if (termo) {
+    infoEl.textContent = visiveis === 0 ? "Nenhum produto encontrado" : `${visiveis} encontrado(s)`;
+  } else if (revisadosN > 0) {
+    const restam = produtos.length - revisadosN;
+    infoEl.textContent = restam > 0 ? `Faltam conferir: ${restam}` : "";
+  } else {
+    infoEl.textContent = `Confira seu estoque · ${produtos.length} itens`;
+  }
+
+  vazio.hidden = !(!termo && visiveis === 0 && produtos.length > 0);
+  atualizarBadge();
 }
 
+/* ---------- ABA LISTA ---------- */
 function gerarLista() {
-  const lista = document.getElementById("listaCompras");
-  const resumo = document.getElementById("listaResumo");
-  lista.innerHTML = "";
-  let totalItens = 0;
-  let itensComprados = 0;
+  const cont = document.getElementById("listaCompras");
+  const vazia = document.getElementById("listaVazia");
+  const btnVer = document.getElementById("btnVerComprados");
+  cont.innerHTML = "";
 
-  produtos.forEach((produto) => {
-    const minimo = Math.max(0, Number(produto.minimo || 0));
-    const estoqueAtual = Math.max(0, Number(produto.estoqueAtual || 0));
-    const falta = Math.max(0, minimo - estoqueAtual);
-    if (falta > 0) {
-      totalItens++;
-      if (checksComprados[produto.id]) itensComprados++;
-      const item = document.createElement("div");
-      item.className = "shopping-item" + (checksComprados[produto.id] ? " comprado" : "");
-      item.innerHTML = `
-        <input type="checkbox" ${checksComprados[produto.id] ? "checked" : ""}
-          onchange="window.app.marcarComprado('${produto.id}', this.checked)" />
-        <div>
-          <div class="item-title">${escapeHtml(produto.nome)}</div>
-          <span class="qty-badge">Falta comprar: ${formatarNumero(falta)} ${escapeHtml(produto.unidade || "un")}</span>
-          <span class="item-meta">Estoque mínimo: ${formatarNumero(minimo)} ${escapeHtml(produto.unidade || "un")}</span>
-          <span class="item-meta">Você tem em casa: ${formatarNumero(estoqueAtual)} ${escapeHtml(produto.unidade || "un")}</span>
-        </div>`;
-      lista.appendChild(item);
-    }
+  const faltantes = produtos.filter(p => faltaDe(p) > 0);
+  const total = faltantes.length;
+  const comprados = faltantes.filter(p => checksComprados[p.id]).length;
+
+  faltantes.forEach((p) => {
+    const comprado = !!checksComprados[p.id];
+    if (comprado && !mostrarComprados) return;
+    const falta = faltaDe(p);
+    const valPreco = precos[p.id] ? formatarMoeda(precos[p.id]) : "";
+    const item = document.createElement("div");
+    item.className = "card shop" + (comprado ? " comprado" : "");
+    item.setAttribute("data-id", p.id);
+    item.innerHTML = `
+      <label class="shop-check">
+        <input type="checkbox" ${comprado ? "checked" : ""} onchange="window.app.marcarComprado('${p.id}', this.checked)" />
+        <span class="checkmark"></span>
+      </label>
+      <div class="shop-info">
+        <div class="shop-name">${escapeHtml(p.nome)}</div>
+        <div class="shop-qty">Comprar ${formatarNumero(falta)} ${escapeHtml(p.unidade || "un")}</div>
+      </div>
+      <div class="shop-price">
+        <span>R$</span>
+        <input type="text" inputmode="decimal" placeholder="000,00" value="${valPreco}"
+          onfocus="this.select()" oninput="window.app.definirPreco('${p.id}', this.value)" />
+      </div>`;
+    cont.appendChild(item);
   });
 
-  const percentual = totalItens === 0 ? 0 : Math.round((itensComprados / totalItens) * 100);
+  const pct = total === 0 ? 0 : Math.round((comprados / total) * 100);
   const barra = document.getElementById("barra");
-  barra.style.width = percentual + "%";
-  barra.textContent = percentual + "%";
+  barra.style.width = pct + "%";
+  document.getElementById("listaPct").textContent = pct + "%";
+  document.getElementById("listaResumo").textContent = total === 0 ? "Lista vazia" : `${comprados} de ${total} no carrinho`;
 
-  resumo.textContent = totalItens === 0
-    ? "Tudo certo. Sua lista zerou bonito."
-    : `Você precisa comprar ${totalItens} item(ns). O progresso sincroniza entre os celulares quando o Firebase estiver configurado.`;
+  vazia.hidden = total !== 0;
+
+  const naoComprados = total - comprados;
+  if (comprados > 0) {
+    btnVer.hidden = false;
+    btnVer.textContent = mostrarComprados ? "Ocultar comprados" : `Ver ${comprados} já no carrinho`;
+  } else {
+    btnVer.hidden = true;
+  }
+
+  atualizarTotalPreco();
+  atualizarBadge();
 }
-
 function marcarComprado(id, checked) {
   checksComprados[id] = checked;
-  salvarTudoLocal();
+  salvarESincronizar();
+  if (checked && !mostrarComprados) {
+    const card = getCard(id);
+    if (card) {
+      card.classList.add("hiding");
+      setTimeout(() => gerarLista(), 220);
+      atualizarTotalPreco();
+      return;
+    }
+  }
   gerarLista();
-  sincronizarRemoto();
+}
+function definirPreco(id, valor) {
+  const v = parseNumero(valor);
+  if (v > 0) precos[id] = v; else delete precos[id];
+  atualizarTotalPreco();
+  salvarESincronizar();
+}
+function atualizarTotalPreco() {
+  let soma = 0;
+  produtos.forEach(p => { if (faltaDe(p) > 0 && precos[p.id]) soma += Number(precos[p.id]); });
+  document.getElementById("precoTotal").textContent = formatarMoeda(soma);
+}
+function atualizarBadge() {
+  const faltam = produtos.filter(p => faltaDe(p) > 0 && !checksComprados[p.id]).length;
+  const badge = document.getElementById("badgeLista");
+  badge.textContent = faltam;
+  badge.hidden = faltam === 0;
+}
+function enviarWhatsApp() {
+  const faltantes = produtos.filter(p => faltaDe(p) > 0 && !checksComprados[p.id]);
+  if (faltantes.length === 0) { alert("Não há itens pendentes para enviar."); return; }
+  let linhas = faltantes.map(p => {
+    const base = `- ${p.nome}: ${formatarNumero(faltaDe(p))} ${p.unidade || "un"}`;
+    return precos[p.id] ? `${base} (R$ ${formatarMoeda(precos[p.id])})` : base;
+  });
+  let total = 0;
+  produtos.forEach(p => { if (faltaDe(p) > 0 && precos[p.id]) total += Number(precos[p.id]); });
+  let texto = "Lista de compras:\n" + linhas.join("\n");
+  if (total > 0) texto += `\n\nTotal estimado: R$ ${formatarMoeda(total)}`;
+  window.open("https://wa.me/?text=" + encodeURIComponent(texto), "_blank");
 }
 
-function adicionarValor() {
-  const campo = document.getElementById("valorItem");
-  const valor = parseFloat(String(campo.value).replace(",", ".")) || 0;
-  totalCompra += valor;
-  salvarTudoLocal();
-  document.getElementById("total").textContent = formatarMoeda(totalCompra);
-  campo.value = "";
-  sincronizarRemoto();
-}
-
-function zerarTotal() {
-  totalCompra = 0;
-  salvarTudoLocal();
-  document.getElementById("total").textContent = formatarMoeda(totalCompra);
-  sincronizarRemoto();
-}
-
+/* ---------- restaurar / abas ---------- */
 function restaurarPadrao() {
-  if (!confirm("Deseja restaurar a lista padrão e apagar alterações locais?")) return;
-  produtos = [...produtosPadrao].map(p => ({...p, estoqueAtual: 0}));
-  totalCompra = 0;
+  if (!confirm("Restaurar a lista padrão e apagar as alterações?")) return;
+  produtos = [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 }));
   checksComprados = {};
-  salvarTudoLocal();
+  precos = {};
+  revisados.clear();
+  salvarESincronizar();
   renderizarTudo();
-  sincronizarRemoto();
 }
-
+function trocarAba(nome) {
+  abaAtual = nome;
+  document.getElementById("screen-estoque").classList.toggle("is-active", nome === "estoque");
+  document.getElementById("screen-lista").classList.toggle("is-active", nome === "lista");
+  document.getElementById("tabEstoque").classList.toggle("is-active", nome === "estoque");
+  document.getElementById("tabLista").classList.toggle("is-active", nome === "lista");
+  window.scrollTo(0, 0);
+  if (nome === "lista") gerarLista(); else renderizarProdutos(buscaValor());
+}
 function renderizarTudo() {
-  document.getElementById("total").textContent = formatarMoeda(totalCompra);
-  renderizarProdutos(document.getElementById("buscaProduto").value);
+  renderizarProdutos(buscaValor());
   gerarLista();
 }
 
+/* ---------- eventos ---------- */
 function bindEventos() {
+  document.getElementById("btnToggleNovo").addEventListener("click", () => {
+    const box = document.getElementById("boxNovo");
+    box.hidden = !box.hidden;
+    if (!box.hidden) document.getElementById("novoNome").focus();
+  });
   document.getElementById("btnAdicionarProduto").addEventListener("click", adicionarProduto);
-  document.getElementById("btnGerarLista").addEventListener("click", async () => { salvarTudoLocal(); gerarLista(); await sincronizarRemoto(); });
-  document.getElementById("btnSalvar").addEventListener("click", async () => { salvarTudoLocal(); await sincronizarRemoto(); alert("Dados salvos."); });
+  document.getElementById("novoNome").addEventListener("keydown", (e) => { if (e.key === "Enter") adicionarProduto(); });
+  document.getElementById("buscaProduto").addEventListener("input", (e) => renderizarProdutos(e.target.value));
+  document.getElementById("btnMostrarTodos").addEventListener("click", () => { revisados.clear(); renderizarProdutos(buscaValor()); });
   document.getElementById("btnRestaurar").addEventListener("click", restaurarPadrao);
-  document.getElementById("btnAdicionarValor").addEventListener("click", adicionarValor);
-  document.getElementById("btnZerarTotal").addEventListener("click", zerarTotal);
-  document.getElementById("valorItem").addEventListener("keydown", (e) => { if (e.key === "Enter") adicionarValor(); });
-  document.getElementById("buscaProduto").addEventListener("input", (e) => { renderizarProdutos(e.target.value); });
-  document.getElementById("novoUnidade").value = "un";
+  document.getElementById("btnIrParaLista").addEventListener("click", () => trocarAba("lista"));
+  document.getElementById("btnVerComprados").addEventListener("click", () => { mostrarComprados = !mostrarComprados; gerarLista(); });
+  document.getElementById("btnWhats").addEventListener("click", enviarWhatsApp);
+  document.getElementById("tabEstoque").addEventListener("click", () => trocarAba("estoque"));
+  document.getElementById("tabLista").addEventListener("click", () => trocarAba("lista"));
 }
 
-// Registro das funções globais para o HTML
-window.app = { atualizarProduto, excluirProduto, marcarComprado, ajustarEstoque, pularParaProximo };
+window.app = { ajustarEstoque, definirEstoqueDireto, confirmarItem, alternarEdicao, atualizarProduto, excluirProduto, marcarComprado, definirPreco };
 
 async function iniciar() {
   carregarEstadoInicial();

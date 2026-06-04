@@ -21,6 +21,7 @@
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
+[hidden]{display:none!important}
 body{
   font-family:var(--body);
   background:var(--bg);
@@ -128,28 +129,29 @@ input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px var(--gr
 }
 .icon-btn:active{background:var(--surface-2)}
 
-.stepper{display:flex;align-items:center;gap:9px;margin-top:13px}
+.stepper{display:flex;align-items:center;gap:8px;margin-top:13px}
 .step{
-  width:46px;height:46px;flex:0 0 auto;border-radius:12px;
+  width:44px;height:44px;flex:0 0 auto;border-radius:12px;
   border:1px solid var(--line);background:var(--surface-2);
-  font-size:24px;font-weight:600;color:var(--ink);
+  font-size:23px;font-weight:600;color:var(--ink);
   display:flex;align-items:center;justify-content:center;line-height:1;
 }
 .step:active{transform:scale(.93)}
-.step-val{
-  width:64px;flex:0 0 auto;text-align:center;font-weight:700;font-size:18px;
-  padding:11px 4px;border-radius:11px;
+.stepper .step-val{
+  flex:1;min-width:0;width:auto;text-align:center;font-weight:700;font-size:18px;
+  padding:11px 6px;border-radius:11px;
 }
-.step-unit{font-size:13px;color:var(--ink-faint);margin-left:-4px;min-width:30px}
 .ok-btn{
-  flex:1;height:46px;border-radius:12px;border:none;
-  background:var(--green);color:#fff;font-weight:700;font-size:16px;letter-spacing:.02em;
+  flex:0 0 auto;width:56px;height:44px;border-radius:12px;border:none;
+  background:var(--green);color:#fff;font-weight:700;font-size:15px;letter-spacing:.02em;
 }
-.ok-btn:active{background:var(--green-dark);transform:scale(.98)}
+.ok-btn:active{background:var(--green-dark);transform:scale(.97)}
 
 .edit-box{margin-top:13px;padding-top:13px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .edit-box label{font-size:12.5px;font-weight:600;color:var(--ink-soft);display:flex;flex-direction:column;gap:5px}
 .edit-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.edit-box .del-check{flex-direction:row;align-items:center;gap:8px;font-size:13px;color:var(--coral);font-weight:600;cursor:pointer;margin-top:2px}
+.edit-box .del-check input{width:18px;height:18px;flex:0 0 auto;accent-color:var(--coral);margin:0}
 
 /* ---------- Botões ---------- */
 .btn{border:none;border-radius:12px;padding:13px 16px;font-weight:700;font-size:15.5px}

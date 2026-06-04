@@ -42,6 +42,19 @@ function getCard(id) { return document.querySelector(`.card[data-id="${id}"]`); 
 function buscaValor() { return document.getElementById("buscaProduto").value; }
 function passoUnidade(u) { return /kg|kilo|litro/i.test(u || "") ? 0.5 : 1; }
 function faltaDe(p) { return Math.max(0, Number(p.minimo || 0) - Math.max(0, Number(p.estoqueAtual || 0))); }
+function normalizarProdutos(bruto) {
+  let arr = Array.isArray(bruto) ? bruto
+    : (bruto && typeof bruto === "object" ? Object.values(bruto) : []);
+  arr = arr.filter(p => p && typeof p === "object" && p.nome != null);
+  return arr.map((p, i) => ({
+    id: p.id || `prod_${Date.now()}_${i}`,
+    nome: String(p.nome || ""),
+    minimo: Number(p.minimo) || 0,
+    unidade: p.unidade || "un",
+    estoqueAtual: Number(p.estoqueAtual) || 0,
+  }));
+}
+function produtosDefault() { return produtosPadrao.map(p => ({ ...p, estoqueAtual: 0 })); }
 
 /* ---------- Firebase ---------- */
 function atualizarStatus(texto, online) {
@@ -50,10 +63,7 @@ function atualizarStatus(texto, online) {
   el.classList.toggle("online", !!online);
 }
 function snapshotPadrao() {
-  return {
-    produtos: [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 })),
-    checksComprados: {}, precos: {}, atualizadoEm: Date.now()
-  };
+  return { produtos: produtosDefault(), checksComprados: {}, precos: {}, atualizadoEm: Date.now() };
 }
 async function iniciarFirebaseSeConfigurado() {
   const cfg = window.firebaseSettings || {};
@@ -75,7 +85,8 @@ async function iniciarFirebaseSeConfigurado() {
   onValue(listaRef, (snap) => {
     const dados = snap.val() || snapshotPadrao();
     ignorarRenderRemoto = true;
-    produtos = Array.isArray(dados.produtos) ? dados.produtos : snapshotPadrao().produtos;
+    produtos = normalizarProdutos(dados.produtos);
+    if (produtos.length === 0) produtos = produtosDefault();
     checksComprados = dados.checksComprados || {};
     precos = dados.precos || {};
     salvarTudoLocal();
@@ -90,7 +101,8 @@ async function sincronizarRemoto() {
 
 /* ---------- estado local ---------- */
 function carregarEstadoInicial() {
-  produtos = carregarLocal(STORAGE_KEY_PRODUTOS, [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 })));
+  produtos = normalizarProdutos(carregarLocal(STORAGE_KEY_PRODUTOS, null));
+  if (produtos.length === 0) produtos = produtosDefault();
   checksComprados = carregarLocal(STORAGE_KEY_CHECKS, {});
   precos = carregarLocal(STORAGE_KEY_PRECOS, {});
 }
@@ -364,7 +376,7 @@ function enviarWhatsApp() {
 /* ---------- restaurar / abas ---------- */
 function restaurarPadrao() {
   if (!confirm("Restaurar a lista padrão e apagar as alterações?")) return;
-  produtos = [...produtosPadrao].map(p => ({ ...p, estoqueAtual: 0 }));
+  produtos = produtosDefault();
   checksComprados = {};
   precos = {};
   revisados.clear();

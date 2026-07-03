@@ -1,6 +1,3 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
-import { getDatabase, ref, onValue, set, update, get } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
-
 const STORAGE_KEY_PRODUTOS = "comprasInteligenteProdutos";
 const STORAGE_KEY_CHECKS = "comprasInteligenteChecks";
 const STORAGE_KEY_PRECOS = "comprasInteligentePrecos";
@@ -9,7 +6,6 @@ let produtos = [];
 let checksComprados = {};
 let precos = {};
 let firebaseAtivo = false;
-let db = null;
 let listaRef = null;
 let ignorarRenderRemoto = false;
 let usuarioUID = null;
@@ -72,32 +68,44 @@ async function iniciarFirebaseSeConfigurado() {
     atualizarStatus("Local", false);
     return;
   }
-  const app = initializeApp({
-    apiKey: cfg.apiKey, authDomain: cfg.authDomain, databaseURL: cfg.databaseURL, projectId: cfg.projectId, appId: cfg.appId
-  });
-  db = getDatabase(app);
-  listaRef = ref(db, `users/${usuarioUID}/lista`);
-  firebaseAtivo = true;
-  atualizarStatus("Sincronizado", true);
 
-  const existente = await get(listaRef);
-  if (!existente.exists()) await set(listaRef, snapshotPadrao());
+  try {
+    const db = firebase.database();
+    listaRef = db.ref(`users/${usuarioUID}/lista`);
+    firebaseAtivo = true;
+    atualizarStatus("Sincronizado", true);
 
-  onValue(listaRef, (snap) => {
-    const dados = snap.val() || snapshotPadrao();
-    ignorarRenderRemoto = true;
-    produtos = normalizarProdutos(dados.produtos);
-    if (produtos.length === 0) produtos = produtosDefault();
-    checksComprados = dados.checksComprados || {};
-    precos = dados.precos || {};
-    salvarTudoLocal();
-    renderizarTudo();
-    ignorarRenderRemoto = false;
-  });
+    // Verificar se dados existem no Firebase
+    listaRef.once("value", async (snap) => {
+      if (!snap.exists()) {
+        await listaRef.set(snapshotPadrao());
+      }
+    });
+
+    // Ouvir mudanças em tempo real
+    listaRef.on("value", (snap) => {
+      const dados = snap.val() || snapshotPadrao();
+      ignorarRenderRemoto = true;
+      produtos = normalizarProdutos(dados.produtos);
+      if (produtos.length === 0) produtos = produtosDefault();
+      checksComprados = dados.checksComprados || {};
+      precos = dados.precos || {};
+      salvarTudoLocal();
+      renderizarTudo();
+      ignorarRenderRemoto = false;
+    });
+  } catch (err) {
+    console.error("Erro ao configurar Firebase:", err);
+    atualizarStatus("Local", false);
+  }
 }
 async function sincronizarRemoto() {
   if (!firebaseAtivo || !listaRef || ignorarRenderRemoto) return;
-  await update(listaRef, { produtos, checksComprados, precos, atualizadoEm: Date.now() });
+  try {
+    await listaRef.update({ produtos, checksComprados, precos, atualizadoEm: Date.now() });
+  } catch (err) {
+    console.error("Erro ao sincronizar:", err);
+  }
 }
 
 /* ---------- estado local ---------- */

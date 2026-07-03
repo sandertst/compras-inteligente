@@ -1,13 +1,7 @@
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
-
-const cfg = window.firebaseSettings || {};
-const auth = getAuth();
-const db = getDatabase();
 const ADMIN_EMAIL = "sandertst@gmail.com";
 
 // Verificar se é admin na inicialização
-onAuthStateChanged(auth, async (user) => {
+firebase.auth().onAuthStateChanged(async (user) => {
   if (!user || user.email !== ADMIN_EMAIL) {
     window.location.href = "/";
     return;
@@ -20,8 +14,8 @@ onAuthStateChanged(auth, async (user) => {
 // Carregar lista de usuários
 async function carregarUsuarios() {
   try {
-    const usersRef = ref(db, "users");
-    const snapshot = await get(usersRef);
+    const db = firebase.database();
+    const snapshot = await db.ref("users").once("value");
     const listEl = document.getElementById("usersList");
     listEl.innerHTML = "";
     
@@ -95,8 +89,8 @@ window.criarUsuarioAdmin = async function() {
 // Ver detalhes do usuário
 window.verDetalhesUsuario = async function(uid) {
   try {
-    const userRef = ref(db, `users/${uid}`);
-    const snapshot = await get(userRef);
+    const db = firebase.database();
+    const snapshot = await db.ref(`users/${uid}`).once("value");
     
     if (!snapshot.exists()) {
       alert("Usuário não encontrado.");

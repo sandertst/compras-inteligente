@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Painel Admin - Compras Inteligente</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="admin-container">
+  <header class="admin-header">
+    <div class="admin-brand">
+      <h1>Painel Admin</h1>
+      <span class="admin-email" id="adminEmail">admin@example.com</span>
+    </div>
+    <button class="btn-logout" onclick="window.fazerLogout()">Logout</button>
+  </header>
+
+  <main class="admin-main">
+    
+    <!-- Seção: Criar novo usuário -->
+    <section class="admin-section">
+      <h2>Criar novo usuário</h2>
+      <div class="admin-form">
+        <input type="text" id="novoUserNome" placeholder="Nome completo" />
+        <input type="email" id="novoUserEmail" placeholder="Email" />
+        <input type="password" id="novoUserSenha" placeholder="Senha" />
+        <button class="btn btn-primary" onclick="window.criarUsuarioAdmin()">Criar usuário</button>
+        <div id="createUserMsg" class="admin-msg" hidden></div>
+      </div>
+    </section>
+
+    <!-- Seção: Lista de usuários -->
+    <section class="admin-section">
+      <h2>Usuários cadastrados</h2>
+      <div id="usersList" class="admin-list"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="data.js"></script>
+<script src="firebase-config.js"></script>
+<script type="module" src="admin.js"></script>
+</body>
+</html>

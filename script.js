@@ -12,6 +12,7 @@ let firebaseAtivo = false;
 let db = null;
 let listaRef = null;
 let ignorarRenderRemoto = false;
+let usuarioUID = null;
 
 const revisados = new Set();      // itens conferidos nesta sessão (somem do estoque)
 let mostrarComprados = false;     // mostrar/ocultar comprados na lista
@@ -67,7 +68,7 @@ function snapshotPadrao() {
 }
 async function iniciarFirebaseSeConfigurado() {
   const cfg = window.firebaseSettings || {};
-  if (!cfg.enabled || !cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId) {
+  if (!cfg.enabled || !cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId || !usuarioUID) {
     atualizarStatus("Local", false);
     return;
   }
@@ -75,7 +76,7 @@ async function iniciarFirebaseSeConfigurado() {
     apiKey: cfg.apiKey, authDomain: cfg.authDomain, databaseURL: cfg.databaseURL, projectId: cfg.projectId, appId: cfg.appId
   });
   db = getDatabase(app);
-  listaRef = ref(db, `listas/${cfg.shoppingListId}`);
+  listaRef = ref(db, `users/${usuarioUID}/lista`);
   firebaseAtivo = true;
   atualizarStatus("Sincronizado", true);
 
@@ -418,10 +419,10 @@ function bindEventos() {
 
 window.app = { ajustarEstoque, definirEstoqueDireto, confirmarItem, alternarEdicao, atualizarProduto, excluirProduto, marcarComprado, definirPreco };
 
-async function iniciar() {
+window.iniciarApp = async function(uid) {
+  usuarioUID = uid;
   carregarEstadoInicial();
   bindEventos();
   renderizarTudo();
   await iniciarFirebaseSeConfigurado();
-}
-iniciar();
+};

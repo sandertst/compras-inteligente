@@ -1,46 +1,45 @@
-const ADMIN_EMAIL = "sandertst@gmail.com";
+// admin.js — painel administrativo (depende de auth.js já carregado antes)
+// NÃO redeclara ADMIN_EMAIL nem inicializa o Firebase: isso já é feito em auth.js.
 
-// Verificar se é admin na inicialização
-firebase.auth().onAuthStateChanged(async (user) => {
+firebase.auth().onAuthStateChanged((user) => {
   if (!user || user.email !== ADMIN_EMAIL) {
     window.location.href = "/";
     return;
   }
-  
   document.getElementById("adminEmail").textContent = user.email;
+  document.getElementById("adminContainer").style.display = "flex";
   carregarUsuarios();
 });
 
 // Carregar lista de usuários
 async function carregarUsuarios() {
+  const listEl = document.getElementById("usersList");
   try {
-    const db = firebase.database();
-    const snapshot = await db.ref("users").once("value");
-    const listEl = document.getElementById("usersList");
+    const snapshot = await firebase.database().ref("users").once("value");
     listEl.innerHTML = "";
-    
+
     if (!snapshot.exists()) {
       listEl.innerHTML = "<p>Nenhum usuário cadastrado ainda.</p>";
       return;
     }
-    
+
     Object.entries(snapshot.val()).forEach(([uid, dados]) => {
       const userCard = document.createElement("div");
       userCard.className = "admin-user-card";
       userCard.innerHTML = `
         <div class="admin-user-info">
           <strong>${escapeHtml(dados.nome || "Sem nome")}</strong>
-          <span class="admin-user-email">${escapeHtml(dados.email)}</span>
-          <span class="admin-user-date">Criado: ${new Date(dados.criadoEm).toLocaleDateString("pt-BR")}</span>
+          <span class="admin-user-email">${escapeHtml(dados.email || "")}</span>
+          <span class="admin-user-date">Criado: ${dados.criadoEm ? new Date(dados.criadoEm).toLocaleDateString("pt-BR") : "—"}</span>
         </div>
         <div class="admin-user-stats">
           <div class="stat">
-            <span class="stat-label">Produtos:</span>
-            <strong>${(dados.lista?.produtos || []).length}</strong>
+            <span class="stat-label">Produtos</span>
+            <strong>${(dados.lista && dados.lista.produtos || []).length}</strong>
           </div>
           <div class="stat">
-            <span class="stat-label">Comprados:</span>
-            <strong>${Object.keys(dados.lista?.checksComprados || {}).length}</strong>
+            <span class="stat-label">Comprados</span>
+            <strong>${Object.keys((dados.lista && dados.lista.checksComprados) || {}).length}</strong>
           </div>
         </div>
         <button class="btn-sm" onclick="window.verDetalhesUsuario('${uid}')">Ver detalhes</button>
@@ -49,67 +48,71 @@ async function carregarUsuarios() {
     });
   } catch (err) {
     console.error("Erro ao carregar usuários:", err);
+    listEl.innerHTML = "<p>Erro ao carregar usuários. Veja o console (F12) para detalhes.</p>";
   }
 }
 
-// Criar novo usuário (função global)
-window.criarUsuarioAdmin = async function() {
+// Criar novo usuário (chamado pelo botão)
+window.criarUsuarioAdmin = async function () {
   const nome = document.getElementById("novoUserNome").value.trim();
   const email = document.getElementById("novoUserEmail").value.trim();
   const senha = document.getElementById("novoUserSenha").value.trim();
   const msgEl = document.getElementById("createUserMsg");
-  
+
   if (!nome || !email || !senha) {
     msgEl.textContent = "Preencha todos os campos.";
     msgEl.className = "admin-msg error";
     msgEl.hidden = false;
     return;
   }
-  
+  if (senha.length < 6) {
+    msgEl.textContent = "A senha precisa ter pelo menos 6 caracteres.";
+    msgEl.className = "admin-msg error";
+    msgEl.hidden = false;
+    return;
+  }
+
   try {
-    const result = await window.criarNovoUsuario(nome, email, senha);
-    if (result) {
-      msgEl.textContent = `✓ Usuário "${nome}" criado com sucesso!`;
-      msgEl.className = "admin-msg success";
-      msgEl.hidden = false;
-      
-      document.getElementById("novoUserNome").value = "";
-      document.getElementById("novoUserEmail").value = "";
-      document.getElementById("novoUserSenha").value = "";
-      
-      setTimeout(() => carregarUsuarios(), 1000);
-    }
+    await window.criarNovoUsuario(nome, email, senha);
+    msgEl.textContent = `✓ Usuário "${nome}" criado com sucesso!`;
+    msgEl.className = "admin-msg success";
+    msgEl.hidden = false;
+
+    document.getElementById("novoUserNome").value = "";
+    document.getElementById("novoUserEmail").value = "";
+    document.getElementById("novoUserSenha").value = "";
+
+    setTimeout(carregarUsuarios, 800);
   } catch (err) {
-    msgEl.textContent = "Erro: " + err.message;
+    msgEl.textContent = err.message || "Erro ao criar usuário.";
     msgEl.className = "admin-msg error";
     msgEl.hidden = false;
   }
 };
 
 // Ver detalhes do usuário
-window.verDetalhesUsuario = async function(uid) {
+window.verDetalhesUsuario = async function (uid) {
   try {
-    const db = firebase.database();
-    const snapshot = await db.ref(`users/${uid}`).once("value");
-    
+    const snapshot = await firebase.database().ref(`users/${uid}`).once("value");
     if (!snapshot.exists()) {
       alert("Usuário não encontrado.");
       return;
     }
-    
+
     const dados = snapshot.val();
     const lista = dados.lista || { produtos: [], checksComprados: {}, precos: {} };
-    
-    let msg = `=== ${dados.nome || "Usuário"} ===\n\n`;
-    msg += `Email: ${dados.email}\n`;
-    msg += `Criado: ${new Date(dados.criadoEm).toLocaleDateString("pt-BR")}\n\n`;
-    
-    msg += `Produtos cadastrados: ${lista.produtos.length}\n`;
-    msg += `Itens para comprar: ${lista.produtos.filter(p => Math.max(0, p.minimo - (p.estoqueAtual || 0)) > 0).length}\n`;
-    msg += `Comprados: ${Object.keys(lista.checksComprados).length}\n\n`;
-    
-    msg += `Total em preços: R$ ${formatarMoeda(Object.values(lista.precos || {}).reduce((a, b) => a + b, 0))}\n`;
-    
+    const produtos = lista.produtos || [];
+    const faltantes = produtos.filter((p) => Math.max(0, (p.minimo || 0) - (p.estoqueAtual || 0)) > 0).length;
+    const totalPrecos = Object.values(lista.precos || {}).reduce((a, b) => a + Number(b || 0), 0);
+
+    let msg = `${dados.nome || "Usuário"}\n`;
+    msg += `${dados.email || ""}\n`;
+    msg += `Criado: ${dados.criadoEm ? new Date(dados.criadoEm).toLocaleDateString("pt-BR") : "—"}\n\n`;
+    msg += `Produtos cadastrados: ${produtos.length}\n`;
+    msg += `Itens para comprar: ${faltantes}\n`;
+    msg += `Comprados: ${Object.keys(lista.checksComprados || {}).length}\n`;
+    msg += `Total em preços: R$ ${formatarMoeda(totalPrecos)}`;
+
     alert(msg);
   } catch (err) {
     console.error("Erro ao obter detalhes:", err);
@@ -120,7 +123,6 @@ window.verDetalhesUsuario = async function(uid) {
 function escapeHtml(text) {
   return String(text ?? "").replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
-
 function formatarMoeda(valor) {
   return Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

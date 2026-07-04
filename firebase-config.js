@@ -1,4 +1,9 @@
-const firebaseConfig = {
+// Configuração do Firebase — projeto: compras-inteligente-9598d
+// Estas credenciais são públicas por natureza (não são segredos):
+// a segurança real vem das Regras do Realtime Database, configuradas no Firebase Console.
+
+window.firebaseSettings = {
+  enabled: true,
   apiKey: "AIzaSyCZuJkIcM-netmX0cgH0EbRAmD41JEwgIk",
   authDomain: "compras-inteligente-9598d.firebaseapp.com",
   databaseURL: "https://compras-inteligente-9598d-default-rtdb.firebaseio.com",

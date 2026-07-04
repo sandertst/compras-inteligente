@@ -56,7 +56,9 @@ function produtosDefault() { return produtosPadrao.map(p => ({ ...p, estoqueAtua
 /* ---------- Firebase ---------- */
 function atualizarStatus(texto, online) {
   const el = document.getElementById("syncStatus");
+  if (!el) return;
   el.lastChild.textContent = texto;
+  el.title = online ? "Sincronizado com o Firebase" : "Salvando só neste aparelho";
   el.classList.toggle("online", !!online);
 }
 function snapshotPadrao() {
@@ -73,7 +75,7 @@ async function iniciarFirebaseSeConfigurado() {
     const db = firebase.database();
     listaRef = db.ref(`users/${usuarioUID}/lista`);
     firebaseAtivo = true;
-    atualizarStatus("Sincronizado", true);
+    atualizarStatus("Online", true);
 
     // Verificar se dados existem no Firebase
     listaRef.once("value", async (snap) => {

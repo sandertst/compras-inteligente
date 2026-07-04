@@ -197,12 +197,16 @@ button{cursor:pointer}
   background:var(--bg);
   border-bottom:1px solid var(--line);
 }
-.brand{display:flex;align-items:center;gap:9px;color:var(--green-dark)}
-.brand-mark{display:flex;color:var(--green)}
-.brand-name{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.01em;color:var(--ink)}
+.brand{display:flex;align-items:center;gap:9px;color:var(--green-dark);flex:1 1 auto;min-width:0}
+.brand-mark{display:flex;color:var(--green);flex:0 0 auto}
+.brand-name{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.01em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .topbar-right{
-  display:flex;align-items:center;gap:8px;
+  display:flex;align-items:center;gap:8px;flex:0 0 auto;
+}
+@media (max-width:380px){
+  .sync{padding:5px 8px;gap:0}
+  .sync .sync-label{display:none}
 }
 .btn-admin,.btn-logout-sm{
   width:34px;height:34px;border-radius:10px;border:1px solid var(--line);
